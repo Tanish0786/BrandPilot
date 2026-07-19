@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://brandpilot.app/schema/brandProfile.schema.json",
+  "title": "BrandProfile",
+  "description": "The brand profile that drives caption generation for a local service business. Vertical-agnostic by design — every field must make sense for a tuition centre today and for other local service verticals later.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "business_name",
+    "vertical",
+    "tone_descriptors",
+    "target_audience",
+    "value_props",
+    "keywords",
+    "example_phrases",
+    "source"
+  ],
+  "properties": {
+    "business_name": {
+      "type": "string",
+      "description": "The business's name as it should appear in captions.",
+      "minLength": 1
+    },
+    "vertical": {
+      "type": "string",
+      "description": "The category of local service business, e.g. \"tuition centre\".",
+      "minLength": 1
+    },
+    "tone_descriptors": {
+      "type": "array",
+      "description": "3-5 adjectives describing the voice captions should be written in.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 3,
+      "maxItems": 5
+    },
+    "target_audience": {
+      "type": "string",
+      "description": "A short plain-language description of who the business's captions should speak to.",
+      "minLength": 1
+    },
+    "value_props": {
+      "type": "array",
+      "description": "The core reasons a customer should choose this business.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "keywords": {
+      "type": "array",
+      "description": "5-10 words or short phrases relevant to the business's captions and hashtags.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 5,
+      "maxItems": 10
+    },
+    "example_phrases": {
+      "type": "array",
+      "description": "1-3 short phrases written in the business's own voice, used to anchor caption tone.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "maxItems": 3
+    },
+    "source": {
+      "type": "string",
+      "description": "How this profile was built.",
+      "enum": ["url", "questionnaire"]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "business_name": "Fluent Circle Language Centre",
+  "vertical": "tuition centre",
+  "tone_descriptors": ["warm", "encouraging", "patient", "supportive"],
+  "target_audience": "Students building foundational spoken English, alongside working adults who want to communicate with more confidence at work and in daily life.",
+  "value_props": [
+    "A judgment-free space to practice speaking out loud",
+    "Small, conversation-focused classes instead of grammar drills",
+    "Flexible batch timings for students and working adults alike",
+    "Real, hearable progress in how confidently you speak"
+  ],
+  "keywords": [
+    "spoken english",
+    "confidence",
+    "communication skills",
+    "language classes",
+    "conversation practice",
+    "fluency",
+    "adult learners",
+    "public speaking"
+  ],
+  "example_phrases": [
+    "Find your voice, one conversation at a time.",
+    "Confidence starts with being heard.",
+    "You already have something to say — we help you say it well."
+  ],
+  "source": "url"
+}

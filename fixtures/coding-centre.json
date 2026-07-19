@@ -1,0 +1,28 @@
+{
+  "business_name": "ByteUp Coding Academy",
+  "vertical": "tuition centre",
+  "tone_descriptors": ["energetic", "modern", "playful", "ambitious"],
+  "target_audience": "Tech-curious teens who want to build real projects — many find and choose the centre themselves rather than being enrolled by parents.",
+  "value_props": [
+    "Hands-on projects from week one, not just theory",
+    "Curriculum built around in-demand, future-ready tech skills",
+    "Portfolio-ready project by the end of every course",
+    "Small, mentor-led batches with real working developers"
+  ],
+  "keywords": [
+    "coding",
+    "python",
+    "web development",
+    "future skills",
+    "STEM",
+    "portfolio",
+    "tech careers",
+    "build real projects"
+  ],
+  "example_phrases": [
+    "Stop watching tutorials. Start shipping projects.",
+    "Code today, build tomorrow.",
+    "Your first app is closer than you think."
+  ],
+  "source": "questionnaire"
+}

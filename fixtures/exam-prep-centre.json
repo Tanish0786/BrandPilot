@@ -1,0 +1,28 @@
+{
+  "business_name": "Apex Board Exam Prep Centre",
+  "vertical": "tuition centre",
+  "tone_descriptors": ["direct", "professional", "results-driven", "confident", "catchy"],
+  "target_audience": "Secondary school students preparing for board exams, and their parents in their 40s who are actively evaluating tuition options based on track record.",
+  "value_props": [
+    "Consistently top board exam results year after year",
+    "Syllabus-aligned, structured curriculum with no wasted sessions",
+    "Small batch sizes so every student gets individual attention",
+    "Weekly mock tests with detailed performance tracking parents can see"
+  ],
+  "keywords": [
+    "board exams",
+    "exam prep",
+    "pass rate",
+    "toppers",
+    "mock tests",
+    "syllabus",
+    "grades",
+    "results"
+  ],
+  "example_phrases": [
+    "Our students don't just pass — they top.",
+    "Every mark counts. We make sure yours does.",
+    "Board exam ready, guaranteed."
+  ],
+  "source": "url"
+}
