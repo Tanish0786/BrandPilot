@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { scrapeUrl } from "@/lib/scrape";
 import { brandProfileSchema } from "@/lib/brandProfileSchema";
+import { createClient } from "@/lib/supabase/server";
 
 const MODEL = "gemini-3.5-flash";
 
@@ -89,6 +90,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Server is missing GEMINI_API_KEY" }, { status: 500 });
   }
 
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "You must be logged in to extract a brand profile" }, { status: 401 });
+  }
+
   let body: { url?: unknown };
   try {
     body = await request.json();
@@ -144,6 +154,20 @@ export async function POST(request: NextRequest) {
 
     const result = brandProfileSchema.safeParse(parsedJson);
     if (result.success) {
+      const { error: saveError } = await supabase
+        .from("brand_profiles")
+        .upsert(
+          { ...result.data, user_id: user.id, source_url: body.url },
+          { onConflict: "user_id" }
+        );
+
+      if (saveError) {
+        return NextResponse.json(
+          { error: `Extracted profile but failed to save it: ${saveError.message}` },
+          { status: 500 }
+        );
+      }
+
       return NextResponse.json(result.data);
     }
 
