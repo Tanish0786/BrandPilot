@@ -1,53 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { scrapeUrl } from "@/lib/scrape";
-import { brandProfileSchema } from "@/lib/brandProfileSchema";
+import { runExtraction } from "@/lib/extractProfile";
 import { createClient } from "@/lib/supabase/server";
-
-const MODEL = "gemini-3.5-flash";
-
-const RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    business_name: { type: "string" },
-    vertical: { type: "string" },
-    tone_descriptors: {
-      type: "array",
-      items: { type: "string" },
-      minItems: 3,
-      maxItems: 5,
-    },
-    target_audience: { type: "string" },
-    value_props: {
-      type: "array",
-      items: { type: "string" },
-      minItems: 1,
-    },
-    keywords: {
-      type: "array",
-      items: { type: "string" },
-      minItems: 5,
-      maxItems: 10,
-    },
-    example_phrases: {
-      type: "array",
-      items: { type: "string" },
-      minItems: 1,
-      maxItems: 3,
-    },
-    source: { type: "string", enum: ["url", "questionnaire"] },
-  },
-  required: [
-    "business_name",
-    "vertical",
-    "tone_descriptors",
-    "target_audience",
-    "value_props",
-    "keywords",
-    "example_phrases",
-    "source",
-  ],
-};
 
 function buildPrompt(siteText: string, retry: boolean): string {
   const base = `You are extracting a structured brand profile for a local service business from the text of its own website homepage. Base every field on the actual language, claims, and phrasing used in the website text below — do not fall back on generic marketing boilerplate that could describe any business in this vertical.
@@ -78,18 +32,7 @@ Return only the fields defined by the schema.`;
 Your previous response was not valid JSON matching the required schema. Return ONLY a single valid JSON object matching the schema exactly — no markdown code fences, no commentary before or after, every field present with the correct type.`;
 }
 
-function stripCodeFences(text: string): string {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenced ? fenced[1] : trimmed;
-}
-
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "Server is missing GEMINI_API_KEY" }, { status: 500 });
-  }
-
   const supabase = await createClient();
   const {
     data: { user },
@@ -115,69 +58,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: scrapeResult.error }, { status: scrapeResult.status });
   }
 
-  const client = new GoogleGenAI({ apiKey });
+  const result = await runExtraction((retry) => buildPrompt(scrapeResult.text, retry));
 
-  let lastFailureReason = "Unknown error";
-
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const prompt = buildPrompt(scrapeResult.text, attempt > 0);
-
-    let outputText: string | undefined;
-    try {
-      const interaction = await client.interactions.create({
-        model: MODEL,
-        input: prompt,
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: RESPONSE_SCHEMA,
-        },
-      });
-      outputText = interaction.output_text;
-    } catch {
-      lastFailureReason = "The LLM request failed";
-      continue;
-    }
-
-    if (!outputText) {
-      lastFailureReason = "The LLM returned an empty response";
-      continue;
-    }
-
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(stripCodeFences(outputText));
-    } catch {
-      lastFailureReason = "The LLM's response was not valid JSON";
-      continue;
-    }
-
-    const result = brandProfileSchema.safeParse(parsedJson);
-    if (result.success) {
-      const { error: saveError } = await supabase
-        .from("brand_profiles")
-        .upsert(
-          { ...result.data, user_id: user.id, source_url: body.url },
-          { onConflict: "user_id" }
-        );
-
-      if (saveError) {
-        return NextResponse.json(
-          { error: `Extracted profile but failed to save it: ${saveError.message}` },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json(result.data);
-    }
-
-    lastFailureReason = `The LLM's response didn't match the required schema: ${result.error.issues
-      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-      .join("; ")}`;
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 502 });
   }
 
-  return NextResponse.json(
-    { error: `Could not extract a valid brand profile after two attempts. ${lastFailureReason}` },
-    { status: 502 }
-  );
+  const { error: saveError } = await supabase
+    .from("brand_profiles")
+    .upsert({ ...result.data, user_id: user.id, source_url: body.url }, { onConflict: "user_id" });
+
+  if (saveError) {
+    return NextResponse.json(
+      { error: `Extracted profile but failed to save it: ${saveError.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json(result.data);
 }
