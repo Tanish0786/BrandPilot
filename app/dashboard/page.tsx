@@ -37,6 +37,9 @@ export default async function DashboardPage() {
           </p>
         </div>
 
+        <Link href="/dashboard/captions" className="underline text-sm font-medium">
+          Generate captions
+        </Link>
         <Link href="/dashboard/profile" className="underline text-sm">
           View / edit brand profile
         </Link>
