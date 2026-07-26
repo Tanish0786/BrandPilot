@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -28,7 +30,8 @@ export default function SignupPage() {
     }
 
     if (data.session) {
-      setMessage("Account created and logged in.");
+      router.push("/dashboard");
+      router.refresh();
     } else {
       setMessage("Account created. Check your email to confirm, then log in.");
     }
