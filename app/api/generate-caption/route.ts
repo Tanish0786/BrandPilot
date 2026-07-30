@@ -13,7 +13,7 @@ type CaptionProfile = {
   keywords: string[];
 };
 
-function buildPrompt(profile: CaptionProfile, topic: string): string {
+function buildPrompt(profile: CaptionProfile, topic: string, note?: string): string {
   return `You are writing a single social media caption for a local service business, in its own voice.
 
 Business: ${profile.business_name} (${profile.vertical})
@@ -23,7 +23,7 @@ What makes them worth choosing: ${profile.value_props.join("; ")}
 Relevant keywords: ${profile.keywords.join(", ")}
 
 Write one social media caption for this post topic/goal: "${topic}"
-
+${note ? `\nSpecific instruction for this caption, follow it closely: ${note}\n` : ""}
 Guidelines:
 - Write in the tone described above — sound like this specific business, not a generic template that could fit any business in this vertical.
 - Speak to the audience described above.
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You must be logged in to generate a caption" }, { status: 401 });
   }
 
-  let body: { topic?: unknown };
+  let body: { topic?: unknown; note?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -54,6 +54,8 @@ export async function POST(request: NextRequest) {
   if (!topic) {
     return NextResponse.json({ error: "Missing topic" }, { status: 400 });
   }
+
+  const note = typeof body.note === "string" && body.note.trim() ? body.note.trim() : undefined;
 
   const { data: profile, error: profileError } = await supabase
     .from("brand_profiles")
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
   try {
     const interaction = await client.interactions.create({
       model: MODEL,
-      input: buildPrompt(profile as CaptionProfile, topic),
+      input: buildPrompt(profile as CaptionProfile, topic, note),
     });
     caption = interaction.output_text?.trim();
   } catch {
@@ -94,8 +96,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "The LLM returned an empty response" }, { status: 502 });
   }
 
-  return new NextResponse(caption, {
-    status: 200,
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+  const { data: piece, error: insertError } = await supabase
+    .from("content_pieces")
+    .insert({
+      user_id: user.id,
+      type: "social_caption",
+      input_prompt: topic,
+      generated_text: caption,
+      status: "pending",
+      model_used: MODEL,
+    })
+    .select("id, input_prompt, generated_text, status, created_at")
+    .single();
+
+  if (insertError) {
+    return NextResponse.json(
+      { error: `Generated a caption but failed to save it: ${insertError.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json(piece);
 }

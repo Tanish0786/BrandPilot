@@ -10,7 +10,16 @@ const TOPIC_SUGGESTIONS = [
   "Weekend workshop",
 ];
 
-type CaptionStatus = "pending" | "approved" | "edited";
+type CaptionStatus = "pending" | "approved" | "edited" | "rejected";
+type Mode = "idle" | "edit" | "note-regenerate" | "note-reject";
+
+type ContentPiece = {
+  id: string;
+  input_prompt: string;
+  generated_text: string;
+  status: CaptionStatus;
+  created_at: string;
+};
 
 const STATUS_STYLES: Record<CaptionStatus, { border: string; label: string; labelClass: string }> = {
   pending: {
@@ -28,47 +37,96 @@ const STATUS_STYLES: Record<CaptionStatus, { border: string; label: string; labe
     label: "Edited",
     labelClass: "text-amber-600 font-medium",
   },
+  rejected: {
+    border: "border-red-300",
+    label: "Rejected",
+    labelClass: "text-red-500 font-medium",
+  },
 };
 
-export default function CaptionGenerator() {
+const TERMINAL_STATUSES: CaptionStatus[] = ["approved", "rejected"];
+
+export default function CaptionGenerator({ initialPieces }: { initialPieces: ContentPiece[] }) {
   const [topic, setTopic] = useState("");
   const [lastTopic, setLastTopic] = useState("");
-  const [caption, setCaption] = useState<string | null>(null);
-  const [status, setStatus] = useState<CaptionStatus>("pending");
-  const [isEditing, setIsEditing] = useState(false);
+  const [pieces, setPieces] = useState<ContentPiece[]>(initialPieces);
+  const [activeId, setActiveId] = useState<string | null>(
+    initialPieces.find((p) => !TERMINAL_STATUSES.includes(p.status))?.id ?? initialPieces[0]?.id ?? null
+  );
+  const [mode, setMode] = useState<Mode>("idle");
   const [editDraft, setEditDraft] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function runGeneration(topicToUse: string) {
+  const activePiece = pieces.find((p) => p.id === activeId) ?? null;
+  const historyPieces = pieces.filter((p) => p.id !== activeId);
+  const isLocked = activePiece ? TERMINAL_STATUSES.includes(activePiece.status) : false;
+
+  async function runGeneration(topicToUse: string, note?: string) {
     if (!topicToUse.trim() || loading) return;
 
     setLoading(true);
     setError(null);
-    setIsEditing(false);
+    setMode("idle");
+    setNoteDraft("");
 
     try {
       const res = await fetch("/api/generate-caption", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicToUse }),
+        body: JSON.stringify({ topic: topicToUse, note }),
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Unknown error" }));
         setError(body.error ?? `Request failed with status ${res.status}`);
-        setCaption(null);
         return;
       }
 
-      setCaption(await res.text());
-      setStatus("pending");
+      const piece: ContentPiece = await res.json();
+      setPieces((prev) => [piece, ...prev]);
+      setActiveId(piece.id);
       setLastTopic(topicToUse);
     } catch {
       setError("Request failed — check the console/network tab.");
-      setCaption(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateActivePiece(update: {
+    status?: CaptionStatus;
+    generated_text?: string;
+    feedback_note?: string;
+  }) {
+    if (!activeId) return null;
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/content-pieces/${activeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Unknown error" }));
+        setError(body.error ?? `Request failed with status ${res.status}`);
+        return null;
+      }
+
+      const updated: ContentPiece = await res.json();
+      setPieces((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      return updated;
+    } catch {
+      setError("Request failed — check the console/network tab.");
+      return null;
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -77,38 +135,46 @@ export default function CaptionGenerator() {
     runGeneration(topic);
   }
 
-  function handleRegenerate() {
-    runGeneration(lastTopic);
-  }
-
-  function handleApprove() {
-    setStatus("approved");
-    setIsEditing(false);
+  async function handleApprove() {
+    await updateActivePiece({ status: "approved" });
   }
 
   function handleStartEdit() {
-    if (!caption) return;
-    setEditDraft(caption);
-    setIsEditing(true);
+    if (!activePiece) return;
+    setEditDraft(activePiece.generated_text);
+    setMode("edit");
   }
 
-  function handleSaveEdit() {
-    setCaption(editDraft);
-    setStatus("edited");
-    setIsEditing(false);
+  async function handleSaveEdit() {
+    const updated = await updateActivePiece({ generated_text: editDraft, status: "edited" });
+    if (updated) setMode("idle");
   }
 
-  function handleCancelEdit() {
-    setIsEditing(false);
+  function handleStartRegenerateNote() {
+    setNoteDraft("");
+    setMode("note-regenerate");
   }
 
-  function handleReject() {
-    setCaption(null);
-    setIsEditing(false);
-    setError(null);
+  function handleConfirmRegenerate() {
+    runGeneration(lastTopic || activePiece?.input_prompt || "", noteDraft.trim() || undefined);
   }
 
-  const styles = STATUS_STYLES[status];
+  function handleStartRejectNote() {
+    setNoteDraft("");
+    setMode("note-reject");
+  }
+
+  async function handleConfirmReject() {
+    const updated = await updateActivePiece({
+      status: "rejected",
+      feedback_note: noteDraft.trim() || undefined,
+    });
+    if (updated) setMode("idle");
+  }
+
+  function handleCancelMode() {
+    setMode("idle");
+  }
 
   return (
     <div className="flex flex-col gap-10">
@@ -162,11 +228,15 @@ export default function CaptionGenerator() {
         </div>
       )}
 
-      {!loading && caption && (
-        <div className={`rounded-2xl border-2 p-8 bg-zinc-50 dark:bg-zinc-900 flex flex-col gap-5 ${styles.border}`}>
-          <p className={`text-sm ${styles.labelClass}`}>{styles.label}</p>
+      {!loading && activePiece && (
+        <div
+          className={`rounded-2xl border-2 p-8 bg-zinc-50 dark:bg-zinc-900 flex flex-col gap-5 ${STATUS_STYLES[activePiece.status].border}`}
+        >
+          <p className={`text-sm ${STATUS_STYLES[activePiece.status].labelClass}`}>
+            {STATUS_STYLES[activePiece.status].label}
+          </p>
 
-          {isEditing ? (
+          {mode === "edit" ? (
             <textarea
               value={editDraft}
               onChange={(e) => setEditDraft(e.target.value)}
@@ -175,33 +245,94 @@ export default function CaptionGenerator() {
               className="text-xl leading-relaxed border rounded-lg p-4 bg-white dark:bg-black"
             />
           ) : (
-            <p className="text-xl leading-relaxed whitespace-pre-wrap font-normal">{caption}</p>
+            <p className="text-xl leading-relaxed whitespace-pre-wrap font-normal">
+              {activePiece.generated_text}
+            </p>
           )}
 
-          {isEditing ? (
+          {isLocked ? null : mode === "edit" ? (
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={handleSaveEdit}
-                disabled={!editDraft.trim()}
+                disabled={!editDraft.trim() || saving}
                 className="bg-black text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
               >
-                Save edit
+                {saving ? "Saving..." : "Save edit"}
               </button>
               <button
                 type="button"
-                onClick={handleCancelEdit}
-                className="border rounded-lg px-4 py-2 text-sm"
+                onClick={handleCancelMode}
+                disabled={saving}
+                className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40"
               >
                 Cancel
               </button>
+            </div>
+          ) : mode === "note-regenerate" ? (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs text-zinc-500">Want to add anything? (optional)</label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  placeholder="more playful, mention weekend hours"
+                  autoFocus
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={handleConfirmRegenerate}
+                  disabled={loading}
+                  className="bg-black text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 shrink-0"
+                >
+                  Regenerate
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelMode}
+                  className="border rounded-lg px-4 py-2 text-sm shrink-0"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : mode === "note-reject" ? (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs text-zinc-500">Want to add anything? (optional)</label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  placeholder="wrong tone, too generic"
+                  autoFocus
+                  className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={handleConfirmReject}
+                  disabled={saving}
+                  className="border border-red-300 text-red-600 rounded-lg px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-40 shrink-0"
+                >
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelMode}
+                  className="border rounded-lg px-4 py-2 text-sm shrink-0"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={handleApprove}
-                disabled={status === "approved"}
+                disabled={saving}
                 className="bg-green-600 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Approve
@@ -209,28 +340,53 @@ export default function CaptionGenerator() {
               <button
                 type="button"
                 onClick={handleStartEdit}
-                disabled={status === "approved"}
+                disabled={saving}
                 className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Edit
               </button>
               <button
                 type="button"
-                onClick={handleRegenerate}
-                disabled={loading}
+                onClick={handleStartRegenerateNote}
+                disabled={loading || saving}
                 className="border rounded-lg px-4 py-2 text-sm disabled:opacity-40"
               >
                 Regenerate
               </button>
               <button
                 type="button"
-                onClick={handleReject}
-                className="border border-red-300 text-red-600 rounded-lg px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-950"
+                onClick={handleStartRejectNote}
+                disabled={saving}
+                className="border border-red-300 text-red-600 rounded-lg px-4 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-950 disabled:opacity-40"
               >
                 Reject
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {historyPieces.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-zinc-500">History</h2>
+          <div className="flex flex-col gap-3">
+            {historyPieces.map((piece) => (
+              <div
+                key={piece.id}
+                className={`rounded-xl border p-4 flex flex-col gap-2 ${STATUS_STYLES[piece.status].border}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-zinc-500">{piece.input_prompt}</p>
+                  <p className={`text-xs ${STATUS_STYLES[piece.status].labelClass}`}>
+                    {STATUS_STYLES[piece.status].label}
+                  </p>
+                </div>
+                <p className="text-sm whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
+                  {piece.generated_text}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

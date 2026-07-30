@@ -12,10 +12,16 @@ export default async function CaptionsPage() {
     redirect("/login");
   }
 
+  const { data: pieces } = await supabase
+    .from("content_pieces")
+    .select("id, input_prompt, generated_text, status, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+
   return (
     <div className="flex flex-1 justify-center p-8">
       <div className="w-full max-w-2xl">
-        <CaptionGenerator />
+        <CaptionGenerator initialPieces={pieces ?? []} />
       </div>
     </div>
   );
