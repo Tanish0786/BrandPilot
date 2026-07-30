@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { brandProfileSchema } from "@/lib/brandProfileSchema";
 import type { BrandProfile } from "@/types/brandProfile";
 
-const MODEL = "gemini-3.5-flash";
+const MODEL = "gemini-flash-lite-latest";
 
 const RESPONSE_SCHEMA = {
   type: "object",
@@ -75,17 +75,17 @@ export async function runExtraction(buildPrompt: (retry: boolean) => string): Pr
 
     let outputText: string | undefined;
     try {
-      const interaction = await client.interactions.create({
+      const response = await client.models.generateContent({
         model: MODEL,
-        input: prompt,
-        response_format: {
-          type: "text",
-          mime_type: "application/json",
-          schema: RESPONSE_SCHEMA,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
         },
       });
-      outputText = interaction.output_text;
-    } catch {
+      outputText = response.text;
+    } catch (err) {
+      console.error("runExtraction: LLM request failed", err);
       lastFailureReason = "The LLM request failed";
       continue;
     }

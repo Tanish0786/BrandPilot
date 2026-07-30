@@ -83,12 +83,13 @@ export async function POST(request: NextRequest) {
 
   let caption: string | undefined;
   try {
-    const interaction = await client.interactions.create({
+    const response = await client.models.generateContent({
       model: MODEL,
-      input: buildPrompt(profile as CaptionProfile, topic, note),
+      contents: buildPrompt(profile as CaptionProfile, topic, note),
     });
-    caption = interaction.output_text?.trim();
-  } catch {
+    caption = response.text?.trim();
+  } catch (err) {
+    console.error("generate-caption: LLM request failed", err);
     return NextResponse.json({ error: "The caption request failed" }, { status: 502 });
   }
 
