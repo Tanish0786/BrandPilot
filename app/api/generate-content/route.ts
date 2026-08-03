@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
       status: "pending",
       model_used: MODEL,
     })
-    .select("id, input_prompt, generated_text, status, created_at")
+    .select("id, type, input_prompt, generated_text, status, created_at")
     .single();
 
   if (insertError) {

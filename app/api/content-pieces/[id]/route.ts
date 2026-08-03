@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .update(update)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, input_prompt, generated_text, status, feedback_note, created_at")
+    .select("id, type, input_prompt, generated_text, status, feedback_note, created_at")
     .single();
 
   if (error) {

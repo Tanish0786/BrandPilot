@@ -2,26 +2,42 @@
 
 import { useState } from "react";
 
-const TOPIC_SUGGESTIONS = [
-  "New batch starting",
-  "Results announcement",
-  "Motivational post",
-  "Limited seats left",
-  "Weekend workshop",
-];
-
-type CaptionStatus = "pending" | "approved" | "edited" | "rejected";
+type ContentType = "social_caption" | "blog_outline";
+type PieceStatus = "pending" | "approved" | "edited" | "rejected";
 type Mode = "idle" | "edit" | "note-regenerate" | "note-reject";
 
 type ContentPiece = {
   id: string;
+  type: ContentType;
   input_prompt: string;
   generated_text: string;
-  status: CaptionStatus;
+  status: PieceStatus;
   created_at: string;
 };
 
-const STATUS_STYLES: Record<CaptionStatus, { border: string; label: string; labelClass: string }> = {
+const TABS: { type: ContentType; label: string }[] = [
+  { type: "social_caption", label: "Captions" },
+  { type: "blog_outline", label: "Blog Outlines" },
+];
+
+const TOPIC_SUGGESTIONS: Record<ContentType, string[]> = {
+  social_caption: [
+    "New batch starting",
+    "Results announcement",
+    "Motivational post",
+    "Limited seats left",
+    "Weekend workshop",
+  ],
+  blog_outline: [
+    "Why exam prep matters",
+    "Study tips for finals",
+    "How to choose the right tutor",
+    "Common mistakes students make",
+    "Building a study routine that sticks",
+  ],
+};
+
+const STATUS_STYLES: Record<PieceStatus, { border: string; label: string; labelClass: string }> = {
   pending: {
     border: "border-zinc-200 dark:border-zinc-800",
     label: "Pending review",
@@ -44,15 +60,21 @@ const STATUS_STYLES: Record<CaptionStatus, { border: string; label: string; labe
   },
 };
 
-const TERMINAL_STATUSES: CaptionStatus[] = ["approved", "rejected"];
+const TERMINAL_STATUSES: PieceStatus[] = ["approved", "rejected"];
 
-export default function CaptionGenerator({ initialPieces }: { initialPieces: ContentPiece[] }) {
+function pickInitialActiveId(pieces: ContentPiece[], type: ContentType): string | null {
+  const ofType = pieces.filter((p) => p.type === type);
+  return ofType.find((p) => !TERMINAL_STATUSES.includes(p.status))?.id ?? ofType[0]?.id ?? null;
+}
+
+export default function ContentGenerator({ initialPieces }: { initialPieces: ContentPiece[] }) {
+  const [activeTab, setActiveTab] = useState<ContentType>("social_caption");
   const [topic, setTopic] = useState("");
-  const [lastTopic, setLastTopic] = useState("");
   const [pieces, setPieces] = useState<ContentPiece[]>(initialPieces);
-  const [activeId, setActiveId] = useState<string | null>(
-    initialPieces.find((p) => !TERMINAL_STATUSES.includes(p.status))?.id ?? initialPieces[0]?.id ?? null
-  );
+  const [activeIds, setActiveIds] = useState<Record<ContentType, string | null>>({
+    social_caption: pickInitialActiveId(initialPieces, "social_caption"),
+    blog_outline: pickInitialActiveId(initialPieces, "blog_outline"),
+  });
   const [mode, setMode] = useState<Mode>("idle");
   const [editDraft, setEditDraft] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
@@ -60,9 +82,19 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activePiece = pieces.find((p) => p.id === activeId) ?? null;
-  const historyPieces = pieces.filter((p) => p.id !== activeId);
+  const activeId = activeIds[activeTab];
+  const piecesForTab = pieces.filter((p) => p.type === activeTab);
+  const activePiece = piecesForTab.find((p) => p.id === activeId) ?? null;
+  const historyPieces = piecesForTab.filter((p) => p.id !== activeId);
   const isLocked = activePiece ? TERMINAL_STATUSES.includes(activePiece.status) : false;
+  const isBlogOutline = activeTab === "blog_outline";
+
+  function switchTab(type: ContentType) {
+    setActiveTab(type);
+    setMode("idle");
+    setError(null);
+    setNoteDraft("");
+  }
 
   async function runGeneration(topicToUse: string, note?: string) {
     if (!topicToUse.trim() || loading) return;
@@ -76,7 +108,7 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
       const res = await fetch("/api/generate-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicToUse, note, contentType: "social_caption" }),
+        body: JSON.stringify({ topic: topicToUse, note, contentType: activeTab }),
       });
 
       if (!res.ok) {
@@ -87,8 +119,7 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
 
       const piece: ContentPiece = await res.json();
       setPieces((prev) => [piece, ...prev]);
-      setActiveId(piece.id);
-      setLastTopic(topicToUse);
+      setActiveIds((prev) => ({ ...prev, [activeTab]: piece.id }));
     } catch {
       setError("Request failed — check the console/network tab.");
     } finally {
@@ -97,7 +128,7 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
   }
 
   async function updateActivePiece(update: {
-    status?: CaptionStatus;
+    status?: PieceStatus;
     generated_text?: string;
     feedback_note?: string;
   }) {
@@ -156,7 +187,7 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
   }
 
   function handleConfirmRegenerate() {
-    runGeneration(lastTopic || activePiece?.input_prompt || "", noteDraft.trim() || undefined);
+    runGeneration(activePiece?.input_prompt || "", noteDraft.trim() || undefined);
   }
 
   function handleStartRejectNote() {
@@ -178,16 +209,35 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
 
   return (
     <div className="flex flex-col gap-10">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Caption generator</h1>
-        <p className="text-zinc-500">
-          Tell us what this post is about, and we&apos;ll write it in your brand&apos;s voice.
-        </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-semibold tracking-tight">Content generator</h1>
+          <p className="text-zinc-500">
+            Tell us what this post is about, and we&apos;ll write it in your brand&apos;s voice.
+          </p>
+        </div>
+
+        <div className="flex gap-1 border-b">
+          {TABS.map((tab) => (
+            <button
+              key={tab.type}
+              type="button"
+              onClick={() => switchTab(tab.type)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                activeTab === tab.type
+                  ? "border-black dark:border-white text-black dark:text-white"
+                  : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-wrap gap-2">
-          {TOPIC_SUGGESTIONS.map((suggestion) => (
+          {TOPIC_SUGGESTIONS[activeTab].map((suggestion) => (
             <button
               key={suggestion}
               type="button"
@@ -240,12 +290,18 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
             <textarea
               value={editDraft}
               onChange={(e) => setEditDraft(e.target.value)}
-              rows={6}
+              rows={isBlogOutline ? 12 : 6}
               autoFocus
-              className="text-xl leading-relaxed border rounded-lg p-4 bg-white dark:bg-black"
+              className={`leading-relaxed border rounded-lg p-4 bg-white dark:bg-black ${
+                isBlogOutline ? "text-base font-mono" : "text-xl"
+              }`}
             />
           ) : (
-            <p className="text-xl leading-relaxed whitespace-pre-wrap font-normal">
+            <p
+              className={`leading-relaxed whitespace-pre-wrap font-normal ${
+                isBlogOutline ? "text-base" : "text-xl"
+              }`}
+            >
               {activePiece.generated_text}
             </p>
           )}
@@ -277,7 +333,9 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
                   type="text"
                   value={noteDraft}
                   onChange={(e) => setNoteDraft(e.target.value)}
-                  placeholder="more playful, mention weekend hours"
+                  placeholder={
+                    isBlogOutline ? "add a section on pricing, fewer sections" : "more playful, mention weekend hours"
+                  }
                   autoFocus
                   className="flex-1 border rounded-lg px-3 py-2 text-sm"
                 />
