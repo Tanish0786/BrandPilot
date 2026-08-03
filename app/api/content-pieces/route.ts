@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("content_pieces")
-    .select("id, input_prompt, generated_text, status, created_at")
+    .select("id, type, input_prompt, generated_text, status, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 

@@ -4,7 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 
 const MODEL = "gemini-flash-lite-latest";
 
-type CaptionProfile = {
+const CONTENT_TYPES = ["social_caption", "blog_outline"] as const;
+type ContentType = (typeof CONTENT_TYPES)[number];
+
+type BrandProfileForPrompt = {
   business_name: string;
   vertical: string;
   tone_descriptors: string[];
@@ -13,7 +16,7 @@ type CaptionProfile = {
   keywords: string[];
 };
 
-function buildPrompt(profile: CaptionProfile, topic: string, note?: string): string {
+function buildSocialCaptionPrompt(profile: BrandProfileForPrompt, topic: string, note?: string): string {
   return `You are writing a single social media caption for a local service business, in its own voice.
 
 Business: ${profile.business_name} (${profile.vertical})
@@ -33,6 +36,43 @@ Guidelines:
 - Return ONLY the caption text — no surrounding quotation marks, no preamble, no explanation, no multiple options.`;
 }
 
+function buildBlogOutlinePrompt(profile: BrandProfileForPrompt, topic: string, note?: string): string {
+  return `You are outlining a short blog post for a local service business, in its own voice.
+
+Business: ${profile.business_name} (${profile.vertical})
+Tone: ${profile.tone_descriptors.join(", ")}
+Audience: ${profile.target_audience}
+What makes them worth choosing: ${profile.value_props.join("; ")}
+Relevant keywords: ${profile.keywords.join(", ")}
+
+Write a short blog post outline for this topic/goal: "${topic}"
+${note ? `\nSpecific instruction for this outline, follow it closely: ${note}\n` : ""}
+Guidelines:
+- Write in the tone described above — sound like this specific business, not a generic template that could fit any business in this vertical.
+- Speak to the audience described above.
+- Ground the outline in real specifics from the value props/keywords where it fits naturally, not generic blog filler.
+- Use exactly 3 to 5 sections, no more, no less.
+- Format the response as plain text, exactly like this, with no markdown symbols (no #, no **, no bullets) and no extra commentary before or after:
+
+Title: <a compelling blog post title>
+
+1. <Section header> — <one sentence describing what this section covers>
+2. <Section header> — <one sentence describing what this section covers>
+(continue for 3 to 5 sections total)`;
+}
+
+function buildPrompt(
+  contentType: ContentType,
+  profile: BrandProfileForPrompt,
+  topic: string,
+  note?: string
+): string {
+  if (contentType === "blog_outline") {
+    return buildBlogOutlinePrompt(profile, topic, note);
+  }
+  return buildSocialCaptionPrompt(profile, topic, note);
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -40,10 +80,10 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "You must be logged in to generate a caption" }, { status: 401 });
+    return NextResponse.json({ error: "You must be logged in to generate content" }, { status: 401 });
   }
 
-  let body: { topic?: unknown; note?: unknown };
+  let body: { topic?: unknown; note?: unknown; contentType?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -56,6 +96,18 @@ export async function POST(request: NextRequest) {
   }
 
   const note = typeof body.note === "string" && body.note.trim() ? body.note.trim() : undefined;
+
+  const contentType: ContentType =
+    typeof body.contentType === "string" && CONTENT_TYPES.includes(body.contentType as ContentType)
+      ? (body.contentType as ContentType)
+      : "social_caption";
+
+  if (body.contentType !== undefined && !CONTENT_TYPES.includes(body.contentType as ContentType)) {
+    return NextResponse.json(
+      { error: `Invalid contentType — must be one of: ${CONTENT_TYPES.join(", ")}` },
+      { status: 400 }
+    );
+  }
 
   const { data: profile, error: profileError } = await supabase
     .from("brand_profiles")
@@ -81,19 +133,19 @@ export async function POST(request: NextRequest) {
 
   const client = new GoogleGenAI({ apiKey });
 
-  let caption: string | undefined;
+  let generatedText: string | undefined;
   try {
     const response = await client.models.generateContent({
       model: MODEL,
-      contents: buildPrompt(profile as CaptionProfile, topic, note),
+      contents: buildPrompt(contentType, profile as BrandProfileForPrompt, topic, note),
     });
-    caption = response.text?.trim();
+    generatedText = response.text?.trim();
   } catch (err) {
-    console.error("generate-caption: LLM request failed", err);
-    return NextResponse.json({ error: "The caption request failed" }, { status: 502 });
+    console.error("generate-content: LLM request failed", err);
+    return NextResponse.json({ error: "The content request failed" }, { status: 502 });
   }
 
-  if (!caption) {
+  if (!generatedText) {
     return NextResponse.json({ error: "The LLM returned an empty response" }, { status: 502 });
   }
 
@@ -101,9 +153,9 @@ export async function POST(request: NextRequest) {
     .from("content_pieces")
     .insert({
       user_id: user.id,
-      type: "social_caption",
+      type: contentType,
       input_prompt: topic,
-      generated_text: caption,
+      generated_text: generatedText,
       status: "pending",
       model_used: MODEL,
     })
@@ -112,7 +164,7 @@ export async function POST(request: NextRequest) {
 
   if (insertError) {
     return NextResponse.json(
-      { error: `Generated a caption but failed to save it: ${insertError.message}` },
+      { error: `Generated content but failed to save it: ${insertError.message}` },
       { status: 500 }
     );
   }

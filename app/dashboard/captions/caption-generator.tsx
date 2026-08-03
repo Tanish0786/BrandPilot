@@ -73,10 +73,10 @@ export default function CaptionGenerator({ initialPieces }: { initialPieces: Con
     setNoteDraft("");
 
     try {
-      const res = await fetch("/api/generate-caption", {
+      const res = await fetch("/api/generate-content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicToUse, note }),
+        body: JSON.stringify({ topic: topicToUse, note, contentType: "social_caption" }),
       });
 
       if (!res.ok) {
