@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 
 const MODEL = "gemini-flash-lite-latest";
 
-const CONTENT_TYPES = ["social_caption", "blog_outline"] as const;
+const CONTENT_TYPES = ["social_caption", "blog_outline", "ad_copy"] as const;
 type ContentType = (typeof CONTENT_TYPES)[number];
 
 type BrandProfileForPrompt = {
@@ -61,6 +61,35 @@ Title: <a compelling blog post title>
 (continue for 3 to 5 sections total)`;
 }
 
+function buildAdCopyPrompt(profile: BrandProfileForPrompt, topic: string, note?: string): string {
+  return `You are writing ad copy for a local service business, in its own voice.
+
+Business: ${profile.business_name} (${profile.vertical})
+Tone: ${profile.tone_descriptors.join(", ")}
+Audience: ${profile.target_audience}
+What makes them worth choosing: ${profile.value_props.join("; ")}
+Relevant keywords: ${profile.keywords.join(", ")}
+
+Write 3 short ad copy variations for this topic/goal: "${topic}"
+${note ? `\nSpecific instruction for these variations, follow it closely: ${note}\n` : ""}
+Guidelines:
+- Write in the tone described above — sound like this specific business, not a generic template that could fit any business in this vertical.
+- Speak to the audience described above.
+- Each variation should take a genuinely different angle (e.g. a different value prop, urgency, or emotional hook) — they shouldn't just reword each other.
+- Ground each variation in real specifics from the value props/keywords where it fits naturally, not generic ad filler.
+- Body copy should be 1-2 sentences, short enough for a real paid ad, not an essay.
+- Format the response as plain text, exactly like this, with no markdown symbols (no #, no **, no bullets) and no extra commentary before or after:
+
+1. Headline: <headline>
+Body: <1-2 sentence body>
+
+2. Headline: <headline>
+Body: <1-2 sentence body>
+
+3. Headline: <headline>
+Body: <1-2 sentence body>`;
+}
+
 function buildPrompt(
   contentType: ContentType,
   profile: BrandProfileForPrompt,
@@ -69,6 +98,9 @@ function buildPrompt(
 ): string {
   if (contentType === "blog_outline") {
     return buildBlogOutlinePrompt(profile, topic, note);
+  }
+  if (contentType === "ad_copy") {
+    return buildAdCopyPrompt(profile, topic, note);
   }
   return buildSocialCaptionPrompt(profile, topic, note);
 }
