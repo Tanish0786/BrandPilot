@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type ContentType = "social_caption" | "blog_outline";
+type ContentType = "social_caption" | "blog_outline" | "ad_copy";
 type PieceStatus = "pending" | "approved" | "edited" | "rejected";
 type Mode = "idle" | "edit" | "note-regenerate" | "note-reject";
 
@@ -18,6 +18,7 @@ type ContentPiece = {
 const TABS: { type: ContentType; label: string }[] = [
   { type: "social_caption", label: "Captions" },
   { type: "blog_outline", label: "Blog Outlines" },
+  { type: "ad_copy", label: "Ad Copy" },
 ];
 
 const TOPIC_SUGGESTIONS: Record<ContentType, string[]> = {
@@ -34,6 +35,13 @@ const TOPIC_SUGGESTIONS: Record<ContentType, string[]> = {
     "How to choose the right tutor",
     "Common mistakes students make",
     "Building a study routine that sticks",
+  ],
+  ad_copy: [
+    "Enrollment discount",
+    "Free trial class",
+    "New batch starting",
+    "Limited seats left",
+    "Results announcement",
   ],
 };
 
@@ -74,6 +82,7 @@ export default function ContentGenerator({ initialPieces }: { initialPieces: Con
   const [activeIds, setActiveIds] = useState<Record<ContentType, string | null>>({
     social_caption: pickInitialActiveId(initialPieces, "social_caption"),
     blog_outline: pickInitialActiveId(initialPieces, "blog_outline"),
+    ad_copy: pickInitialActiveId(initialPieces, "ad_copy"),
   });
   const [mode, setMode] = useState<Mode>("idle");
   const [editDraft, setEditDraft] = useState("");
@@ -87,7 +96,7 @@ export default function ContentGenerator({ initialPieces }: { initialPieces: Con
   const activePiece = piecesForTab.find((p) => p.id === activeId) ?? null;
   const historyPieces = piecesForTab.filter((p) => p.id !== activeId);
   const isLocked = activePiece ? TERMINAL_STATUSES.includes(activePiece.status) : false;
-  const isBlogOutline = activeTab === "blog_outline";
+  const isLongForm = activeTab === "blog_outline" || activeTab === "ad_copy";
 
   function switchTab(type: ContentType) {
     setActiveTab(type);
@@ -290,16 +299,16 @@ export default function ContentGenerator({ initialPieces }: { initialPieces: Con
             <textarea
               value={editDraft}
               onChange={(e) => setEditDraft(e.target.value)}
-              rows={isBlogOutline ? 12 : 6}
+              rows={isLongForm ? 12 : 6}
               autoFocus
               className={`leading-relaxed border rounded-lg p-4 bg-white dark:bg-black ${
-                isBlogOutline ? "text-base font-mono" : "text-xl"
+                isLongForm ? "text-base font-mono" : "text-xl"
               }`}
             />
           ) : (
             <p
               className={`leading-relaxed whitespace-pre-wrap font-normal ${
-                isBlogOutline ? "text-base" : "text-xl"
+                isLongForm ? "text-base" : "text-xl"
               }`}
             >
               {activePiece.generated_text}
@@ -334,7 +343,11 @@ export default function ContentGenerator({ initialPieces }: { initialPieces: Con
                   value={noteDraft}
                   onChange={(e) => setNoteDraft(e.target.value)}
                   placeholder={
-                    isBlogOutline ? "add a section on pricing, fewer sections" : "more playful, mention weekend hours"
+                    activeTab === "blog_outline"
+                      ? "add a section on pricing, fewer sections"
+                      : activeTab === "ad_copy"
+                        ? "focus on urgency, mention the discount"
+                        : "more playful, mention weekend hours"
                   }
                   autoFocus
                   className="flex-1 border rounded-lg px-3 py-2 text-sm"

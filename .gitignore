@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local tooling config (dev server launch config, not shared/needed by other contributors)
+.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
